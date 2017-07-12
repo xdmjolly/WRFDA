@@ -19,7 +19,7 @@ subroutine da_get_innov_vector_rttov (it, grid, ob, iv)
 #if defined(RTTOV)
 
    integer  :: n        ! Loop counter.
-   integer  :: i, j, k  ! Index dimension.
+   integer  :: i, j, k, kk  ! Index dimension.
    integer  :: nlevels  ! Number of obs levels.
    integer  :: nchanprof, errorstatus
    integer  :: ir_atlas_version, mw_atlas_version
@@ -49,6 +49,9 @@ real,allocatable :: temp(:), temp2(:), temp3(:,:)
 
    real, allocatable :: em_mspps(:)    ! emissivity caluclated using MSPPS algorithm
    real              :: ts_mspps       ! surface temperature calcualted using MSPPS algorithm
+
+   real   :: bk,ck,ek,dk
+   real, allocatable :: QC0(:,:),QR0(:,:),QI0(:,:),QS0(:,:)
 
    if (trace_use) call da_trace_entry("da_get_innov_vector_rttov")
 
@@ -167,10 +170,38 @@ real,allocatable :: temp(:), temp2(:), temp3(:,:)
          call da_interp_lin_2d (grid%xb%q  (:,:,k), iv%instid(inst)%info, k, iv%instid(inst)%qm(k,:))
          call da_interp_lin_2d (grid%xb%qrn(:,:,k), iv%instid(inst)%info, k, iv%instid(inst)%qrn(k,:))
          call da_interp_lin_2d (grid%xb%qcw(:,:,k), iv%instid(inst)%info, k, iv%instid(inst)%qcw(k,:))
-       ! call da_interp_lin_2d (grid%xb%qci(:,:,k), iv%instid(inst)%info, k, iv%instid(inst)%qci(k,:))
-       ! call da_interp_lin_2d (grid%xb%qsn(:,:,k), iv%instid(inst)%info, k, iv%instid(inst)%qsn(k,:))
+         call da_interp_lin_2d (grid%xb%qci(:,:,k), iv%instid(inst)%info, k, iv%instid(inst)%qci(k,:))
+         call da_interp_lin_2d (grid%xb%qsn(:,:,k), iv%instid(inst)%info, k, iv%instid(inst)%qsn(k,:))
        ! call da_interp_lin_2d (grid%xb%qgr(:,:,k), iv%instid(inst)%info, k, iv%instid(inst)%qgr(k,:))
       end do
+!***************adding by hwy for 3D_qc/qi/qr/qs**************
+      If(rttov_cloud) then
+      allocate( QC0(1:nlevels,n1:n2),QR0(1:nlevels,n1:n2),QI0(1:nlevels,n1:n2),QS0(1:nlevels,n1:n2) )
+      do n=n1,n2
+      do kk=1,nlevels
+       QC0(kk,n)=0.0
+       QR0(kk,n)=0.0
+       QI0(kk,n)=0.0
+       QS0(kk,n)=0.0
+        do k=kts,kte-1
+        if(pres(kk) < v_p(k,n).and. pres(kk) > v_p(k+1,n)) then
+        bk=(iv%instid(inst)%qcw(k,n)-iv%instid(inst)%qcw(k+1,n))/(v_p(k,n)-v_p(k+1,n))
+        QC0(kk,n)=iv%instid(inst)%qcw(k,n)-(v_p(k,n)-pres(kk))*bk
+        ck=(iv%instid(inst)%qrn(k,n)-iv%instid(inst)%qrn(k+1,n))/(v_p(k,n)-v_p(k+1,n))
+        QR0(kk,n)=iv%instid(inst)%qrn(k,n)-(v_p(k,n)-pres(kk))*ck
+        dk=(iv%instid(inst)%qci(k,n)-iv%instid(inst)%qci(k+1,n))/(v_p(k,n)-v_p(k+1,n))
+        QI0(kk,n)=iv%instid(inst)%qci(k,n)-(v_p(k,n)-pres(kk))*dk
+        ek=(iv%instid(inst)%qsn(k,n)-iv%instid(inst)%qsn(k+1,n))/(v_p(k,n)-v_p(k+1,n))
+        QS0(kk,n)=iv%instid(inst)%qsn(k,n)-(v_p(k,n)-pres(kk))*ek
+        exit
+        endif
+        end do
+!       if(n==1) write(*,"(a,1x,2(I2,1x),4(1x,e11.4))")"renew_QC",n,kk,QC0(kk,n),QR0(kk,n),QI0(kk,n),QS0(kk,n)
+       end do
+       end do
+     end if
+!*********************end of adding *********************************************
+
 
       iv%instid(inst)%pm(:,n1:n2)  = v_p(:,n1:n2)
 
@@ -202,12 +233,12 @@ real,allocatable :: temp(:), temp2(:), temp3(:,:)
 
       if ( rttov_emis_atlas_ir > 0 .or. rttov_emis_atlas_mw > 0 ) then
          ! set up emissivity atlas
-         atlas_path = 'emis_data/'
+         atlas_path = 'emis_data'
          ir_atlas_version = 100
          mw_atlas_version = 100   ! TELSEM
          if ( rttov_emis_atlas_mw == 2 ) mw_atlas_version = 200   ! CNRW
-         write(unit=message(1),fmt='(A,A)')  &
-            'Setting up emissivity atlas for instrument ', trim(iv%instid(inst)%rttovid_string)
+         write(unit=message(1),fmt='(A,A,A)')  &
+            'Setting up emissivity atlas for instrument ', trim(iv%instid(inst)%rttovid_string),trim(atlas_path)
          call da_message(message(1:1))
          call rttov_setup_emis_atlas(                      &
             errorstatus,                                   & ! out
@@ -222,6 +253,8 @@ real,allocatable :: temp(:), temp2(:), temp3(:,:)
                (/"failure in setting up emissivity atlas"/))
          end if
 
+         print*,"Finishing reading emis_atlas"
+  
          ! Generate the chanprof array
          allocate(chanprof(nchanprof))
          do n = n1, n2
@@ -281,6 +314,14 @@ real,allocatable :: temp(:), temp2(:), temp3(:,:)
          con_vars(n) % nlevels = nlevels 
          allocate (con_vars(n) % t(nlevels))
          allocate (con_vars(n) % q(nlevels))
+
+         allocate (con_vars(n) % clw(nlevels))
+         allocate (con_vars(n) % ciw(nlevels))
+         allocate (con_vars(n) % rain(nlevels))
+         allocate (con_vars(n) % sp(nlevels))
+         allocate (con_vars(n) % cc(nlevels))
+  !      allocate (con_vars(n) % ph(nlevels))
+     
          if ( use_rttov_kmatrix ) then
             allocate (con_vars(n) % t_jac(nchan,nlevels))
             allocate (con_vars(n) % q_jac(nchan,nlevels))
@@ -290,9 +331,23 @@ real,allocatable :: temp(:), temp2(:), temp3(:,:)
             con_vars(n) % ps_jac(:)  = 0.0
          end if
 
+         con_vars(n) % ps           = iv%instid(inst)%ps(n)        
          con_vars(n) % t(1:nlevels) = iv%instid(inst)%t(1:nlevels,n)
-         con_vars(n) % q(1:nlevels) = iv%instid(inst)%mr(1:nlevels,n)
-         con_vars(n) % ps           = iv%instid(inst)%ps(n)
+         con_vars(n) % q(1:nlevels) = iv%instid(inst)%mr(1:nlevels,n)   
+
+  !   for cld_profile
+  !       con_vars(n) % clw(1:nlevels) = iv%instid(inst)%qcw(1:nlevels,n)
+  !       con_vars(n) % ciw(1:nlevels) = iv%instid(inst)%qci(1:nlevels,n)
+  !       con_vars(n) % rain(1:nlevels)= iv%instid(inst)%qrn(1:nlevels,n)
+  !       con_vars(n) % sp(1:nlevels)  = iv%instid(inst)%qsn(1:nlevels,n)
+
+          con_vars(n) % clw(1:nlevels) = QC0(1:nlevels,n)
+          con_vars(n) % ciw(1:nlevels) = QI0(1:nlevels,n)
+          con_vars(n) % rain(1:nlevels)= QR0(1:nlevels,n)
+          con_vars(n) % sp(1:nlevels)  = QS0(1:nlevels,n)  
+   
+          con_vars(n) % cc(1:nlevels)  = 0.5    
+
 
          aux_vars(n) % t2m      = iv%instid(inst)%t2m(n)
          aux_vars(n) % q2m      = iv%instid(inst)%mr2m(n)
@@ -313,6 +368,7 @@ real,allocatable :: temp(:), temp2(:), temp3(:,:)
          ! da_rttov_k or da_rttov_direct is used one profile per call
          allocate(temp(nchan),temp2(nchan),temp3(nchan,nlevels-1))   
          if ( use_rttov_kmatrix ) then
+            print*,"11111",n,n1,n2,inst,nchan,nlevels
             call da_rttov_k (inst, nchan, 1, nlevels, &
                con_vars(n:n), aux_vars(n:n), &
                temp, temp2, temp3, emissivity((n-n1)*nchan+1:(n-n1+1)*nchan))
@@ -338,7 +394,7 @@ real,allocatable :: temp(:), temp2(:), temp3(:,:)
                iv%instid(inst)%t_jacobian(:,k,n) = con_vars(n)%t_jac(:,k)
                iv%instid(inst)%q_jacobian(:,k,n) = con_vars(n)%q_jac(:,k)
             end do
-            iv%instid(inst)%ps_jacobian(:,n) = con_vars(n)%ps_jac(:)
+               iv%instid(inst)%ps_jacobian(:,n) = con_vars(n)%ps_jac(:)
          end do
          do n = n1, n2
             deallocate (con_vars(n) % t_jac)
@@ -350,6 +406,19 @@ real,allocatable :: temp(:), temp2(:), temp3(:,:)
       do n=n1,n2
          deallocate (con_vars(n) % t)
          deallocate (con_vars(n) % q)
+
+         deallocate (con_vars(n) % clw)
+         deallocate (con_vars(n) % ciw)
+         deallocate (con_vars(n) % rain)
+         deallocate (con_vars(n) % sp)
+         deallocate (con_vars(n) % cc)
+     !   deallocate (con_vars(n) % ph)   
+
+     !    deallocate (QC0)
+     !    deallocate (QI0)
+     !    deallocate (QR0)
+     !    deallocate (QS0)
+
       end do
 
       !----------------------------------------------------------------

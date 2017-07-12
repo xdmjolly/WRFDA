@@ -42,7 +42,7 @@ program da_rad_diags
    integer                                :: ncid, dimid, varid
    integer, dimension(3)                  :: ishape, istart, icount
 !
-   logical                                :: amsr2
+   logical                                :: amsr2, gmi
    logical                                :: isfile, prf_found, jac_found
    integer, parameter                     :: datelen1 = 10
    integer, parameter                     :: datelen2 = 19
@@ -135,6 +135,7 @@ ntime_loop: do itime = 1, ntime
       write(0,*) trim(instid(iinst))
 
       amsr2 = index(instid(iinst),'amsr2') > 0
+      gmi   = index(instid(iinst),'gmi') > 0 
 
       nerr = 0
       total_npixel = 0
@@ -595,7 +596,7 @@ ntime_loop: do itime = 1, ntime
       ios = NF_DEF_VAR(ncid, 'vegfra',       NF_FLOAT, 1, ishape(1), varid)
       ios = NF_DEF_VAR(ncid, 'elev',         NF_FLOAT, 1, ishape(1), varid)
       ios = NF_DEF_VAR(ncid, 'clwp',         NF_FLOAT, 1, ishape(1), varid)
-      if ( amsr2 ) then
+      if ( amsr2 .or. gmi ) then
          ios = NF_DEF_VAR(ncid, 'ret_clw',   NF_FLOAT, 1, ishape(1), varid)
       end if
 
@@ -798,7 +799,7 @@ ntime_loop: do itime = 1, ntime
       ios = NF_PUT_VARA_REAL(ncid,  varid, istart(2), icount(2), elev)
       ios = NF_INQ_VARID (ncid, 'clwp', varid)
       ios = NF_PUT_VARA_REAL(ncid,  varid, istart(2), icount(2), clwp)
-      if ( amsr2 ) then
+      if ( amsr2 .or. gmi ) then
          ios = NF_INQ_VARID (ncid, 'ret_clw', varid)
          ios = NF_PUT_VARA_REAL(ncid,  varid, istart(2), icount(2), ret_clw)
       end if

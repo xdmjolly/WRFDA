@@ -19,7 +19,7 @@ subroutine da_write_oa_rad_ascii (it, ob, iv, re )
    character(len=filename_len)  :: filename
    character(len=7)   :: surftype
    integer            :: ndomain
-   logical            :: amsr2
+   logical            :: amsr2, gmi
 
    if (trace_use) call da_trace_entry("da_write_oa_rad_ascii")
 
@@ -40,6 +40,7 @@ subroutine da_write_oa_rad_ascii (it, ob, iv, re )
       if (ndomain < 1) cycle
 
       amsr2 = index(iv%instid(i)%rttovid_string,'amsr2') > 0
+      gmi   = index(iv%instid(i)%rttovid_string,'gmi')   > 0
 
       write(unit=filename, fmt='(i2.2,a,i4.4)') it,'_oma_'//trim(iv%instid(i)%rttovid_string)//'.', myproc
 
@@ -54,7 +55,7 @@ subroutine da_write_oa_rad_ascii (it, ob, iv, re )
                            ' channel-number-of-each-pixel : ', iv%instid(i)%nchan, &
                            ' index-of-channels : '
       write(unit=oma_rad_unit,fmt='(10i5)') iv%instid(i)%ichan
-      if ( amsr2 ) then
+      if ( amsr2 .OR. gmi ) then
          write(unit=oma_rad_unit,fmt='(a)') ' pixel-info : i date scanpos landsea_mask  elv lat lon  satzen satazi clw'
       else
          write(unit=oma_rad_unit,fmt='(a)') ' pixel-info : i date scanpos landsea_mask  elv lat lon  satzen satazi '
@@ -65,7 +66,7 @@ subroutine da_write_oa_rad_ascii (it, ob, iv, re )
       do n=1,iv%instid(i)%num_rad
          if (iv%instid(i)%info%proc_domain(1,n)) then
             ndomain=ndomain+1
-            if ( amsr2 ) then !write out clw
+            if ( amsr2 .OR. gmi) then !write out clw
                write(unit=oma_rad_unit,fmt='(a,i7,2x,a,i6,i3,f6.0,4f8.2,f8.3)') 'INFO : ', ndomain, &
                                    iv%instid(i)%info%date_char(n), &
                                    iv%instid(i)%scanpos(n),        &

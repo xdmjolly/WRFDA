@@ -90,7 +90,7 @@ subroutine da_setup_obs_structures( grid, ob, iv, j_cost)
       use_hsbobs .OR. use_kma1dvar .OR. use_filtered_rad .OR. &
       use_ssmisobs .OR. use_hirs4obs .OR. use_mhsobs .OR. use_pseudo_rad .OR. &
       use_mwtsobs  .OR. use_mwhsobs .OR. use_atmsobs .OR. use_simulated_rad .OR. &
-      use_iasiobs .OR. use_seviriobs .OR. use_amsr2obs) then
+      use_iasiobs .OR. use_seviriobs .OR. use_amsr2obs .OR. use_gmiobs) then
       use_rad = .true.
    else
       use_rad = .false.
@@ -275,6 +275,10 @@ subroutine da_setup_obs_structures( grid, ob, iv, j_cost)
       if ( use_amsr2obs ) then
          call da_message((/'Using AMSR2 radiance input in HDF5 format'/))
       end if
+      if ( use_gmiobs ) then
+         call da_message((/'Using GMI radiance input in HDF5 format'/))
+      end if
+
       call da_setup_radiance_structures(grid, ob, iv)
 #else
       call da_error(__FILE__,__LINE__,(/"options to use radiance data are turned on in wrfvar4 namelist, the code needs to be compiled with CRTM or RTTOV library"/))

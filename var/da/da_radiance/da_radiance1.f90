@@ -10,7 +10,7 @@ module da_radiance1
    use module_radiance, only : CRTM_Planck_Radiance, CRTM_Planck_Temperature
 #endif
 #ifdef RTTOV
-   use module_radiance, only : coefs
+   use module_radiance, only : coefs, coef_scatt
 #endif
 
    use da_control, only : trace_use,missing_r, rootproc, &
@@ -77,6 +77,14 @@ module da_radiance1
       real   ,  pointer  ::  t_jac(:,:) => null()
       real   ,  pointer  ::  q_jac(:,:) => null()
       real   ,  pointer  ::  ps_jac(:)  => null()
+
+      real   ,  pointer  ::  ph(:)
+      real   ,  pointer  ::  cc(:)
+      real   ,  pointer  ::  clw(:)   ! kg/kg
+      real   ,  pointer  ::  ciw(:)   ! kg/kg
+      real   ,  pointer  ::  rain(:)  ! kg/kg
+      real   ,  pointer  ::  sp(:)    ! kg/kg
+
    end type con_vars_type
 
    type con_cld_vars_type
@@ -233,6 +241,7 @@ contains
 #include "da_qc_atms.inc"
 #include "da_qc_seviri.inc"
 #include "da_qc_amsr2.inc"
+#include "da_qc_gmi.inc"
 #include "da_write_iv_rad_ascii.inc"
 #include "da_write_oa_rad_ascii.inc"
 #include "da_detsurtyp.inc"

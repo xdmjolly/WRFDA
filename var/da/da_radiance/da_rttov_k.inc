@@ -25,6 +25,10 @@ subroutine da_rttov_k(inst, nchanl, nprofiles, nlevels, &
    ! RTTOV input parameters
    type (rttov_chanprof), allocatable :: chanprof(:)
    type (profile_type),   allocatable :: profiles(:), profiles_k(:)
+   type (profile_cloud_type) , allocatable :: cld_profiles(:), cld_profiles_k(:) 
+   type (rttov_scatt_coef)   :: coef_scatt     ! scatting coefficients structure
+   type (rttov_options_scatt)         :: opts_scatt 
+
    logical, allocatable               :: calcemis(:)
 
    ! RTTOV out parameters
@@ -34,6 +38,8 @@ subroutine da_rttov_k(inst, nchanl, nprofiles, nlevels, &
    type (rttov_emissivity), allocatable :: emissivity_k(:)
    type (radiance_type)               :: radiance, radiance_k
    type (transmission_type)           :: transmission, transmission_k
+
+   integer (kind=jpim)       , allocatable :: frequencies (:)
 
    call da_trace_entry("da_rttov_k")
 
@@ -226,7 +232,115 @@ subroutine da_rttov_k(inst, nchanl, nprofiles, nlevels, &
    !-----------------------------------
    !  calling RTTOV forward and K model
    !----------------------------------
+   if (rttov_cloud) then
+   call rttov_read_scattcoeffs (errorstatus, coefs(inst)%coef, coef_scatt)
+   ! Setup indices
+   call rttov_scatt_setupindex ( &
+      & nprofiles,           & ! in
+      & nchanl,           & ! in
+      & coefs(inst)%coef, & ! in
+      & nchanprof,       & ! in
+      & chanprof,        & ! out
+      & frequencies)       ! out
 
+   asw = 1  ! allocate
+   allocate (cld_profiles(nprofiles), stat=alloc_status(9))
+   call rttov_alloc_scatt_prof(  &
+      & nprofiles,               &
+      & cld_profiles,            &
+      & nlevels,                 &
+      & .false.,                 &
+      & asw,                     &
+      & init = .true.           )  ! mandatory if either opts%addclouds or opts%addaerosl is true
+   if ( alloc_status(9) /= 0 ) then
+     call da_error(__FILE__,__LINE__, &
+        (/"memory allocation error for scatt_profile arrays"/))
+   end if
+    do n=1, nprofiles
+    cld_profiles(n) % clw(:)     = con_vars(n)%clw(:)
+    cld_profiles(n) % ciw(:)     = con_vars(n)%ciw(:)
+    cld_profiles(n) % rain(:)    = con_vars(n)%rain(:)
+    cld_profiles(n) % sp(:)      = con_vars(n)%sp(:)
+    cld_profiles(n) % cc(:)      = con_vars(n)%cc(:)
+
+ ! Surface pressure = lowest half-level pressure
+   cld_profiles (n) % ph (nlevels+1)=profiles(n) %p(nlevels)
+   profiles(n) % s2m % p    =cld_profiles (n) % ph (nlevels+1)
+   cld_profiles (n) % ph (1)=0.005
+ !   cld_profiles (n) % ph (nlevels+1)=profiles(n) % s2m % p
+
+ ! Levels
+    do k = nlevels,2,-1
+    cld_profiles (n) % ph(k)=(profiles(n)% p(k)+profiles(n)% p(k-1))/2.0
+    end do
+   end do
+
+!   write(*,*) "cld_prof",cld_profiles (1) % ph(1),cld_profiles (1) % ph(nlevels+1)
+!   write(*,*) "Calling rttov_scatt forward model"
+   call rttov_scatt (        &
+      & errorstatus,         &! out
+      & opts_scatt,          &! in
+      & nlevels,             &! in
+      & chanprof,            &! in
+      & frequencies,         &! in
+      & profiles,            &! in
+      & cld_profiles,        &! in
+      & coefs(inst),         &! in
+      & coef_scatt,          &! in
+      & calcemis,            &! in
+      & emissivity,          &! in
+      & radiance)             ! out
+   
+   do i = 1, nchanprof
+   write (*,'(2i8,3x,f10.3)') chanprof(i), radiance % bt (i)
+   end do
+
+! -------------------------------------------------------------------------------------
+! Jacobian calculation - achieved by calling the adjoint code in "K" mode
+! -------------------------------------------------------------------------------------
+
+    write(*,*) "Calling Jacobian model"
+
+! Allocate & initialiase K profiles (input/output) and K radiance (input) structures
+   asw = 1  ! allocate
+   allocate (cld_profiles_k(nchanprof), stat=alloc_status(9))
+   call rttov_alloc_scatt_prof(  &
+      & nchanprof,               &
+      & cld_profiles_k,          &
+      & nlevels,                 &
+      & .false.,                 &
+      & asw,                     &
+      & init = .true.           )  ! mandatory if either opts%addclouds or opts%addaerosl is true
+   if ( alloc_status(9) /= 0 ) then
+     call da_error(__FILE__,__LINE__, &
+        (/"memory allocation error for cld_profile_k arrays"/))
+   end if
+
+    radiance_k % bt(:)       = 1.0   ! (ACTIVATES K behaviour in adjoint code)
+    emissivity_k(:) % emis_out = 0.0
+
+  call rttov_scatt_ad ( &
+  & errorstatus,        &! out
+  & opts_scatt,         &! in
+  & nlevels,            &! in
+  & chanprof,           &! in
+  & frequencies,        &! in
+  & profiles,           &! inout
+  & cld_profiles,       &! in
+  & coefs(inst),        &! in
+  & coef_scatt,         &! in
+  & calcemis,           &! in
+  & emissivity,         &! inout
+  & profiles_k,         &! in (ACTIVATES K behaviour in adjoint code: note dimension)
+  & cld_profiles_k,     &! in
+  & emissivity_k,       &! inout
+  & radiance,           &! inout
+  & radiance_k)          ! inout
+
+   ! Write output
+   write(*,*) 'Jacobian wrt T [1E-3 K / K] for profile 1'
+  
+   else
    call rttov_k(           &
       & errorstatus,       &   ! out
       & chanprof,          &   ! in     chanprof(nchanprof)
@@ -241,6 +355,8 @@ subroutine da_rttov_k(inst, nchanl, nprofiles, nlevels, &
       & calcemis,          &   ! in,    optional  calcemis(nchanprof)
       & emissivity,        &   ! inout, optional  emissivity(nchanprof)
       & emissivity_k)          ! inout, optional  emissivity_k(nchanprof)
+   endif
+
 
    if ( print_detail_rad .or. errorstatus /= errorstatus_success ) then
       WRITE (UNIT=stderr,FMT=*) 'rttov_k error code = ', errorstatus
@@ -268,8 +384,8 @@ subroutine da_rttov_k(inst, nchanl, nprofiles, nlevels, &
    end if
 
    do n = 1, nprofiles
-      tb(1:nchanl,n) = radiance % bt_clear((n-1)*nchanl+1:n*nchanl)
-      rad_xb(1:nchanl,n) = radiance % clear((n-1)*nchanl+1:n*nchanl)
+      tb(1:nchanl,n) = radiance % bt((n-1)*nchanl+1:n*nchanl)
+      rad_xb(1:nchanl,n) = radiance % total((n-1)*nchanl+1:n*nchanl)
       do k = 1, nlevels-1
          rad_ovc(1:nchanl,k,n) = radiance % overcast(k,(n-1)*nchanl+1:n*nchanl)
       end do	
